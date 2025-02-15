@@ -35,7 +35,13 @@ func PickTask(ctx context.Context, runner *actions_model.ActionRunner) (*runnerv
 		}
 		job = t.Job
 
-		secrets, err := secret_model.GetSecretsOfTask(ctx, t)
+		protected, err := t.Job.Run.IsProtected(ctx)
+
+		if err != nil {
+			return fmt.Errorf("IsProtected: %w", err)
+		}
+
+		secrets, err := secret_model.GetSecretsOfTask(ctx, t, protected)
 		if err != nil {
 			return fmt.Errorf("GetSecretsOfTask: %w", err)
 		}

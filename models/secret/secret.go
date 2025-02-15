@@ -36,10 +36,11 @@ import (
 // It's for security reasons, admin may be not aware of that the secrets could be stolen by any user when setting them as global.
 type Secret struct {
 	ID          int64
-	OwnerID     int64              `xorm:"INDEX UNIQUE(owner_repo_name) NOT NULL"`
-	RepoID      int64              `xorm:"INDEX UNIQUE(owner_repo_name) NOT NULL DEFAULT 0"`
-	Name        string             `xorm:"UNIQUE(owner_repo_name) NOT NULL"`
-	Data        string             `xorm:"LONGTEXT"` // encrypted data
+	OwnerID     int64  `xorm:"INDEX UNIQUE(owner_repo_name) NOT NULL"`
+	RepoID      int64  `xorm:"INDEX UNIQUE(owner_repo_name) NOT NULL DEFAULT 0"`
+	Name        string `xorm:"UNIQUE(owner_repo_name) NOT NULL"`
+	Data        string `xorm:"LONGTEXT"` // encrypted data
+	Protected   bool
 	CreatedUnix timeutil.TimeStamp `xorm:"created NOT NULL"`
 }
 
@@ -57,7 +58,7 @@ func (err ErrSecretNotFound) Unwrap() error {
 }
 
 // InsertEncryptedSecret Creates, encrypts, and validates a new secret with yet unencrypted data and insert into database
-func InsertEncryptedSecret(ctx context.Context, ownerID, repoID int64, name, data string) (*Secret, error) {
+func InsertEncryptedSecret(ctx context.Context, ownerID, repoID int64, name, data string, protected bool) (*Secret, error) {
 	if ownerID != 0 && repoID != 0 {
 		// It's trying to create a secret that belongs to a repository, but OwnerID has been set accidentally.
 		// Remove OwnerID to avoid confusion; it's not worth returning an error here.
@@ -72,10 +73,11 @@ func InsertEncryptedSecret(ctx context.Context, ownerID, repoID int64, name, dat
 		return nil, err
 	}
 	secret := &Secret{
-		OwnerID: ownerID,
-		RepoID:  repoID,
-		Name:    strings.ToUpper(name),
-		Data:    encrypted,
+		OwnerID:   ownerID,
+		RepoID:    repoID,
+		Name:      strings.ToUpper(name),
+		Data:      encrypted,
+		Protected: protected,
 	}
 	return secret, db.Insert(ctx, secret)
 }
@@ -86,10 +88,11 @@ func init() {
 
 type FindSecretsOptions struct {
 	db.ListOptions
-	RepoID   int64
-	OwnerID  int64 // it will be ignored if RepoID is set
-	SecretID int64
-	Name     string
+	RepoID           int64
+	OwnerID          int64 // it will be ignored if RepoID is set
+	SecretID         int64
+	Name             string
+	ExcludeProtected bool
 }
 
 func (opts FindSecretsOptions) ToConds() builder.Cond {
@@ -108,6 +111,10 @@ func (opts FindSecretsOptions) ToConds() builder.Cond {
 	}
 	if opts.Name != "" {
 		cond = cond.And(builder.Eq{"name": strings.ToUpper(opts.Name)})
+	}
+
+	if opts.ExcludeProtected {
+		cond = cond.And(builder.Eq{"protected": 0})
 	}
 
 	return cond
@@ -130,7 +137,7 @@ func UpdateSecret(ctx context.Context, secretID int64, data string) error {
 	return err
 }
 
-func GetSecretsOfTask(ctx context.Context, task *actions_model.ActionTask) (map[string]string, error) {
+func GetSecretsOfTask(ctx context.Context, task *actions_model.ActionTask, protected bool) (map[string]string, error) {
 	secrets := map[string]string{}
 
 	secrets["GITHUB_TOKEN"] = task.Token
@@ -143,12 +150,12 @@ func GetSecretsOfTask(ctx context.Context, task *actions_model.ActionTask) (map[
 		return secrets, nil
 	}
 
-	ownerSecrets, err := db.Find[Secret](ctx, FindSecretsOptions{OwnerID: task.Job.Run.Repo.OwnerID})
+	ownerSecrets, err := db.Find[Secret](ctx, FindSecretsOptions{OwnerID: task.Job.Run.Repo.OwnerID, ExcludeProtected: !protected})
 	if err != nil {
 		log.Error("find secrets of owner %v: %v", task.Job.Run.Repo.OwnerID, err)
 		return nil, err
 	}
-	repoSecrets, err := db.Find[Secret](ctx, FindSecretsOptions{RepoID: task.Job.Run.RepoID})
+	repoSecrets, err := db.Find[Secret](ctx, FindSecretsOptions{RepoID: task.Job.Run.RepoID, ExcludeProtected: !protected})
 	if err != nil {
 		log.Error("find secrets of repo %v: %v", task.Job.Run.RepoID, err)
 		return nil, err

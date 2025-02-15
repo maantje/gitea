@@ -5,6 +5,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -121,6 +122,27 @@ func GetProtectedTagByNamePattern(ctx context.Context, repoID int64, pattern str
 		return nil, nil
 	}
 	return tag, nil
+}
+
+func IsProtectedTag(ctx context.Context, repoID int64, tagName string) (bool, error) {
+	protectedTags, err := GetProtectedTags(ctx, repoID)
+
+	if err != nil {
+		return true, fmt.Errorf("GetProtectedTags: %w", err)
+	}
+
+	for _, tag := range protectedTags {
+		err := tag.EnsureCompiledPattern()
+		if err != nil {
+			return true, err
+		}
+
+		if tag.matchString(tagName) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // IsUserAllowedToControlTag checks if a user can control the specific tag.

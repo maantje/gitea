@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"code.gitea.io/gitea/models/db"
+	git_model "code.gitea.io/gitea/models/git"
 	repo_model "code.gitea.io/gitea/models/repo"
 	user_model "code.gitea.io/gitea/models/user"
 	"code.gitea.io/gitea/modules/git"
@@ -432,6 +433,30 @@ func UpdateRun(ctx context.Context, run *ActionRun, cols ...string) error {
 	}
 
 	return nil
+}
+
+func (run *ActionRun) IsProtected(ctx context.Context) (bool, error) {
+	refName := git.RefName(run.Ref)
+	shortName := refName.ShortName()
+
+	if refName.IsBranch() {
+		protected, err := git_model.IsBranchProtected(ctx, run.RepoID, shortName)
+
+		fmt.Println(protected, shortName)
+		if err != nil {
+			return true, err
+		}
+
+		return protected, nil
+	}
+
+	protected, err := git_model.IsProtectedTag(ctx, run.RepoID, shortName)
+
+	if err != nil {
+		return true, err
+	}
+
+	return protected, nil
 }
 
 type ActionRunIndex db.ResourceIndex

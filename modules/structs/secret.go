@@ -20,5 +20,6 @@ type CreateOrUpdateSecretOption struct {
 	// Data of the secret to update
 	//
 	// required: true
-	Data string `json:"data" binding:"Required"`
+	Data      string `json:"data" binding:"Required"`
+	Protected bool   `json:"protected" binding:"Required"`
 }
